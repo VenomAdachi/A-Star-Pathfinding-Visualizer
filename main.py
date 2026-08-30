@@ -1,4 +1,5 @@
 import pygame
+from collections import deque
 pygame.init()
 
 #Screen Dimensions
@@ -44,6 +45,7 @@ CELL_COLORS = {
     PATH: PATH_COLOR,
 }
 
+#Drawing Process
 def draw_grid(surface):
     for x in range(0, GRID_WIDTH + 1, BLOCK_SIZE):
         pygame.draw.line(surface, GRID_COLOR, (x, 0), (x, GRID_HEIGHT))
@@ -79,15 +81,102 @@ def draw_hover(surface, row, column):
     y = row * BLOCK_SIZE
     pygame.draw.rect(surface, HOVER_COLOR, (x, y, BLOCK_SIZE, BLOCK_SIZE), 2)
 
+#BFS Algorithim Based Functions
+
+def get_neighbors(row, column, grid):
+    neighbors = []
+
+    neighbor_up = row - 1, column #every other day im wondering 
+    neighbor_down = row +1, column
+    neighbor_left = row, column -1 #whats a human being gotta be like?
+    neighbor_right = row, column +1
+
+    potential_neighbors = [
+        neighbor_up, #whats a way to just be competent 
+        neighbor_down,
+        neighbor_left,#these sweet instincts ruin my life
+        neighbor_right
+    ]
+
+    for n in potential_neighbors: #every other day im wondering
+        neighbor_row, neighbor_column = n
+
+        in_grid = ( #was it a mistake to try and define
+            0 <= neighbor_row < len(grid)
+            and 0 <= neighbor_column < len(grid[0])
+        )
+
+        if in_grid and grid[neighbor_row][neighbor_column] != WALL:
+            neighbors.append(n)
+
+    return neighbors
+
+def bfs(grid, start, destination):
+    queue = deque([start])
+    visited = {start}
+    came_from = {start: None}
+    explored_order = []
+
+    while queue:
+        current = queue.popleft()
+        explored_order.append(current)
+
+        if current == destination:
+            break
+
+        current_row, current_column = current
+        neighbors = get_neighbors(current_row, current_column, grid)
+
+        for neighbor in neighbors:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                came_from[neighbor] = current
+                queue.append(neighbor)
+
+    if destination not in came_from:
+            return explored_order, []
+    
+    path = []
+    current = destination
+
+    while current is not None:
+        path.append(current)
+        current = came_from[current]
+
+    path.reverse()
+
+    return explored_order, path
+
+def display_bfs(grid_cells, explored, path):
+    for row, column in explored:
+        if grid_cells[row][column] == EMPTY:
+            grid_cells[row][column] = VISITED
+    
+    for row, column in path:
+        if grid_cells[row][column] not in (START, DESTINATION):
+            grid_cells[row][column] = PATH
+
+def clear_bfs(grid, explored, path):
+    for row, column in explored:
+        if grid[row][column] == VISITED:
+            grid[row][column] = EMPTY
+
+    for row, column in path:
+        if grid[row][column] == PATH:
+            grid[row][column] = EMPTY
+
+
 
 def main():
     running = True
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Grid")
     clock = pygame.time.Clock()
-
+    
     start_cell = None
     destination_cell = None
+    explored = []
+    path = []
 
     grid_cells = [[EMPTY for _ in range(COLUMN_NUMBER)] for _ in range(ROW_NUMBER)]
 
@@ -97,13 +186,13 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-            if event.type == pygame.MOUSEBUTTONUP:
+            if event.type == pygame.MOUSEBUTTONUP: #Mouse Logic
                 clicked_cell = get_mouse_cell(event.pos)
 
                 if clicked_cell is not None:
                     row, column = clicked_cell
 
-                    if event.button == 1:
+                    if event.button == 1 and grid_cells[row][column] == EMPTY:
 
                         if start_cell is None:
                             start_cell = (row, column)
@@ -125,6 +214,29 @@ def main():
                             destination_cell = None
 
                         grid_cells[row][column] = EMPTY   
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    if start_cell is not None and destination_cell is not None:
+                        clear_bfs(grid_cells, explored, path)
+                        explored, path = bfs(grid_cells, start_cell, destination_cell)
+                        display_bfs(grid_cells, explored, path)
+
+                if event.key == pygame.K_r:
+                    clear_bfs(grid_cells, explored, path)
+                    explored = []
+                    path = []
+
+                if event.key == pygame.K_c:
+                    grid_cells = [
+                        [EMPTY for _ in range (COLUMN_NUMBER)] 
+                        for _ in range (ROW_NUMBER)
+                        ]
+                    
+                    start_cell = None
+                    destination_cell = None
+                    explored = []
+                    path = []
 
         screen.fill(BG_COLOR)
 
