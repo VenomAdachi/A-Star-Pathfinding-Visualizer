@@ -237,11 +237,103 @@ def draw_text(surface, font, message, x, y):
     text = font.render(message, True, GRID_COLOR)
     surface.blit(text, (x,y))
 
+def draw_lines(surface, font, lines, x, start_y, spacing=35):
+    for i, line in enumerate(lines):
+        draw_text(surface, font, line, x, start_y + i * spacing)
+
+def draw_normal_panel(surface, font, selected_algorithm, stats, animation_status, animation_delay):
+    found_text = "Yes" if stats["found"] else "No"
+
+    lines = [
+        f"Algorithms: {selected_algorithm}",
+        "",
+        f"Expanded Cells: {stats['expanded']}",
+        f"Path Length: {stats['path_length']}",
+        f"Runtime: {stats['runtime_ms']:.3f} ms",
+        f"Path Found: {found_text}",
+        "",
+        f"Status: {animation_status}",
+        f"Animation Delay: {animation_delay} ms",
+        "",
+        "Press H to Display Controls"
+    ]
+
+    draw_lines(surface, font, lines, 650, 50, 35)
+
+def draw_help_panel(surface, font, help_controls):
+    draw_lines(surface, font, help_controls, 650, 50, 35)
+
+def draw_comparison_panel(surface, font, comparison_stats):
+    bfs_stats = comparison_stats["BFS"]
+    a_star_stats = comparison_stats["A*"]
+
+    draw_text(surface, font, "BFS vs. A* Comparison", 650, 50)
+    draw_text(surface, font, "Metric", 650, 110)
+    draw_text(surface, font, "BFS", 900, 110)
+    draw_text(surface, font, "A*", 1050, 110)
+
+    comparison_rows = [
+        ("Expanded Cells", bfs_stats["expanded"], a_star_stats["expanded"]),
+        ("Path Length", bfs_stats["path_length"], a_star_stats["path_length"]),
+        ("Runtime", f"{bfs_stats['runtime_ms']:.3f} ms", f"{a_star_stats['runtime_ms']:.3f} ms"),
+        ("Path Found", "Yes" if bfs_stats["found"] else "No", "Yes" if a_star_stats["found"] else "No")
+        ]
+
+    start_y = 150
+    spacing = 50
+
+    for i, (label, bfs_value, a_star_value) in enumerate(comparison_rows):
+        y = start_y + i * spacing
+
+        draw_text(surface, font, label, 650, y)
+        draw_text(surface, font, str(bfs_value), 900, y)
+        draw_text(surface, font, str(a_star_value), 1050, y)
+
+    draw_text(surface, font, "Press M to clear the compairison", 650, 400)
+
+
 def reset_stats(stats):
     stats["expanded"] = 0
     stats["path_length"] = 0
     stats["runtime_ms"] = 0
     stats["found"] = False
+
+def run_search(grid, start, destination, algorithm):
+    start_time = time.perf_counter()
+
+    if algorithm == "BFS":
+        explored, path = bfs(grid, start, destination)
+
+        g_scores = {}
+        h_scores = {}
+        f_scores = {}
+
+    elif algorithm == "A*":
+        explored, path, g_scores, h_scores, f_scores = a_star(grid, start, destination)
+
+    else:
+        raise ValueError("I have no idea how you did this. Congrats!")
+
+    runtime_ms = (time.perf_counter() - start_time) * 1000
+
+    stats = {
+        "expanded": len(explored),
+        "path_length": max(0, len(path) - 1),
+        "runtime_ms": runtime_ms,
+        "found": bool(path)
+    }
+
+    return explored, path, stats, g_scores, h_scores, f_scores
+
+def run_comparison(grid, start, destination):
+    _,_,bfs_stats, _, _, _ = run_search(grid, start, destination, "BFS")
+
+    _, _, a_star_stats, _, _, _ = run_search(grid, start, destination, "A*")
+
+    return {
+        "BFS": bfs_stats,
+        "A*": a_star_stats
+    }
 
 def main():
     running = True
@@ -261,7 +353,7 @@ def main():
     animation_paused = False
 
     last_animation_step = 0
-    animation_delay = 10 #Delay
+    animation_delay = 50 #Delay
 
     stats = {
         "expanded": 0,
@@ -274,11 +366,43 @@ def main():
     h_scores = {}
     f_scores = {}
 
+    selected_algorithm = "BFS"
+
+    show_help = False
+
+    help_control = [
+        "CONTROLS",
+        "Space = Run Search",
+        "B = Select Breadth First Search (BFS)",
+        "A = Select A Star (A*)",
+        "P = Pause/Resume",
+        "N = Step Forward",
+        "Up Arrow = Faster",
+        "Down Arrow = Slower",
+        "R = Reset Search",
+        "C = Clear Grid",
+        "M = BFS vs. A* Comparison Mode",
+        "H = Close Help",
+    ]
+
+    comparison_mode = False
+    comparison_stats = {
+        "BFS": None,
+        "A*": None
+    }
+
     font = pygame.font.Font(None, 28)
 
     grid_cells = [[EMPTY for _ in range(COLUMN_NUMBER)] for _ in range(ROW_NUMBER)]
 
     while running:
+
+        if animation_paused:
+            animation_status = "Paused"
+        elif animation_running:
+            animation_status = "Running"
+        else:
+            animation_status = "Idle"
 
         current_time = pygame.time.get_ticks()
 
@@ -290,6 +414,7 @@ def main():
 
                 if not still_animating:
                     animation_running = False
+                    animation_paused = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -329,32 +454,27 @@ def main():
                     if start_cell is not None and destination_cell is not None:
                         clear_search_visuals(grid_cells)
 
-                        start_time = time.perf_counter()
-
-                        # explored, path = bfs(grid_cells, start_cell, destination_cell)
-                        explored, path, g_scores, h_scores, f_scores = a_star(grid_cells, start_cell, destination_cell)
-
-
-                        runtime_ms = (time.perf_counter() - start_time) * 1000
+                        explored, path, stats, g_scores, h_scores, f_scores = run_search(grid_cells, start_cell, destination_cell, selected_algorithm)
 
                         explore_animation = deque(explored)
                         path_animation = deque(path)
 
                         animation_running = True
                         animation_paused = False
+                        comparison_mode = False
 
                         last_animation_step = pygame.time.get_ticks()
-
-                        stats["expanded"] = len(explored)
-                        stats["path_length"] = max(0, len(path) - 1)
-                        stats["runtime_ms"] = runtime_ms
-                        stats["found"] = bool(path)
 
                 if event.key == pygame.K_r:
                     animation_running = False
                     animation_paused = False
                     explore_animation.clear()
                     path_animation.clear()
+                    comparison_mode = False
+
+                    g_scores.clear()
+                    h_scores.clear()
+                    f_scores.clear()
 
                     reset_stats(stats)
 
@@ -372,6 +492,11 @@ def main():
                     animation_paused = False
                     explore_animation.clear()
                     path_animation.clear()
+                    comparison_mode = False
+
+                    g_scores.clear()
+                    h_scores.clear()
+                    f_scores.clear()
 
                     reset_stats(stats)
                     start_cell = None
@@ -379,14 +504,94 @@ def main():
                     explored = []
                     path = []
 
-        screen.fill(BG_COLOR)
-        draw_text(screen, font, "Algorithm: Breadth First Search (BFS)", 650, 50)
-        draw_text(screen, font, f"Expanded Cells: {stats['expanded']}", 650, 130)
-        draw_text(screen, font, f"Path Length: {stats['path_length']}", 650, 210)
-        draw_text(screen, font, f"Runtime: {stats['runtime_ms']:.3f} ms", 650, 290)
+                if event.key == pygame.K_b:
+                    selected_algorithm = "BFS"
+                    clear_search_visuals(grid_cells)
 
-        found_text = "Yes" if stats ["found"] else "No"
-        draw_text(screen, font, f"Path Found: {found_text}", 650, 360)
+                    animation_running = False
+                    animation_paused = False
+                    explore_animation.clear()
+                    path_animation.clear()
+                    reset_stats(stats)
+                    comparison_mode = False
+                    g_scores.clear()
+                    h_scores.clear()
+                    f_scores.clear()
+
+                if event.key == pygame.K_a:
+                    selected_algorithm = "A*"
+                    clear_search_visuals(grid_cells)
+
+                    animation_running = False
+                    animation_paused = False
+                    explore_animation.clear()
+                    path_animation.clear()
+                    reset_stats(stats)
+                    comparison_mode = False
+
+                if event.key == pygame.K_p:
+                    if animation_running:
+                        animation_paused = not animation_paused
+
+                if event.key == pygame.K_n:
+                    if animation_running:
+                        animation_paused = True
+
+                        advance_animation(grid_cells, explore_animation, path_animation)
+
+                    if not explore_animation and not path_animation:
+                        animation_paused = False
+                        animation_running = False
+
+                if event.key == pygame.K_UP:
+                    animation_delay = max(5, animation_delay -10)
+
+                if event.key == pygame.K_DOWN:
+                    animation_delay = min(500, animation_delay +10)
+
+                if event.key == pygame.K_h:
+                    show_help = not show_help
+
+                if event.key == pygame.K_m:
+                    if comparison_mode:
+                        comparison_mode = False
+
+                    elif start_cell is not None and destination_cell is not None:
+                        animation_running = False
+                        animation_paused = False
+                        explore_animation.clear()
+                        path_animation.clear()
+
+                        clear_search_visuals(grid_cells)
+
+                        comparison_stats = run_comparison(grid_cells, start_cell, destination_cell)
+                        comparison_mode = True
+
+        screen.fill(BG_COLOR)
+
+        if show_help:
+            draw_help_panel(screen, font, help_control)
+
+        elif comparison_mode:
+            draw_comparison_panel(screen, font, comparison_stats)
+
+        else:
+            draw_normal_panel(screen, font, selected_algorithm, stats, animation_status, animation_delay)
+
+
+            # draw_text(screen, font, f"Algorithm: {selected_algorithm}", 650, 50)
+            # draw_text(screen, font, f"Expanded Cells: {stats['expanded']}", 650, 130)
+            # draw_text(screen, font, f"Path Length: {stats['path_length']}", 650, 210)
+            # draw_text(screen, font, f"Runtime: {stats['runtime_ms']:.3f} ms", 650, 290)
+
+            # found_text = "Yes" if stats ["found"] else "No"
+            # draw_text(screen, font, f"Path Found: {found_text}", 650, 360)
+
+            # draw_text(screen, font, f"Status: {animation_status}", 650, 450)
+
+            # draw_text(screen, font, f"Animation Delay: {animation_delay} ms", 650, 500)
+
+            # draw_text(screen, font, f"Press H to Display Controls", 650, 550)
 
 
         draw_cells(screen, grid_cells)
@@ -398,7 +603,7 @@ def main():
             row, column = hovered_cell
             draw_hover(screen, row, column)
 
-        if hovered_cell in f_scores:
+        if not show_help and not comparison_mode and hovered_cell in f_scores:
             cell_g = g_scores[hovered_cell]
             cell_h = h_scores[hovered_cell]
             cell_f = f_scores[hovered_cell]
