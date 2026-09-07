@@ -1,4 +1,5 @@
 import pygame
+import time
 from collections import deque
 pygame.init()
 
@@ -147,25 +148,40 @@ def bfs(grid, start, destination):
 
     return explored_order, path
 
-def display_bfs(grid_cells, explored, path):
-    for row, column in explored:
-        if grid_cells[row][column] == EMPTY:
-            grid_cells[row][column] = VISITED
+def advance_animation(grid, explore_queue, path_queue):
+    if explore_queue: 
+        row, column = explore_queue.popleft()
+
+        if grid[row][column] == EMPTY:
+            grid[row][column] = VISITED
+        return True
+
+    elif path_queue:
+        row, column = path_queue.popleft()
+
+        if grid[row][column] not in (START, DESTINATION):
+            grid[row][column] = PATH
+
+        return True
+
+    return False
     
-    for row, column in path:
-        if grid_cells[row][column] not in (START, DESTINATION):
-            grid_cells[row][column] = PATH
 
-def clear_bfs(grid, explored, path):
-    for row, column in explored:
-        if grid[row][column] == VISITED:
-            grid[row][column] = EMPTY
+def clear_search_visuals(grid):
+    for row in range(len(grid)):
+        for column in range(len(grid[0])):
+            if grid[row][column] in (VISITED, PATH):
+                grid[row][column] = EMPTY
 
-    for row, column in path:
-        if grid[row][column] == PATH:
-            grid[row][column] = EMPTY
+def draw_text(surface, font, message, x, y):
+    text = font.render(message, True, GRID_COLOR)
+    surface.blit(text, (x,y))
 
-
+def reset_stats(stats):
+    stats["expanded"] = 0
+    stats["path_length"] = 0
+    stats["runtime_ms"] = 0
+    stats["found"] = False
 
 def main():
     running = True
@@ -178,9 +194,38 @@ def main():
     explored = []
     path = []
 
+    explore_animation = deque()
+    path_animation = deque()
+
+    animation_running = False
+    animation_paused = False
+
+    last_animation_step = 0
+    animation_delay = 10 #Delay
+
+    stats = {
+        "expanded": 0,
+        "path_length": 0,
+        "runtime_ms": 0,
+        "found": False
+    }
+
+    font = pygame.font.Font(None, 28)
+
     grid_cells = [[EMPTY for _ in range(COLUMN_NUMBER)] for _ in range(ROW_NUMBER)]
 
     while running:
+
+        current_time = pygame.time.get_ticks()
+
+        if animation_running and not animation_paused:
+
+            if current_time - last_animation_step >= animation_delay:
+                still_animating = advance_animation(grid_cells, explore_animation, path_animation)
+                last_animation_step = current_time
+
+                if not still_animating:
+                    animation_running = False
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -218,12 +263,36 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     if start_cell is not None and destination_cell is not None:
-                        clear_bfs(grid_cells, explored, path)
+                        clear_search_visuals(grid_cells)
+
+                        start_time = time.perf_counter()
+
                         explored, path = bfs(grid_cells, start_cell, destination_cell)
-                        display_bfs(grid_cells, explored, path)
+
+                        runtime_ms = (time.perf_counter() - start_time) * 1000
+
+                        explore_animation = deque(explored)
+                        path_animation = deque(path)
+
+                        animation_running = True
+                        animation_paused = False
+
+                        last_animation_step = pygame.time.get_ticks()
+
+                        stats["expanded"] = len(explored)
+                        stats["path_length"] = max(0, len(path) - 1)
+                        stats["runtime_ms"] = runtime_ms
+                        stats["found"] = bool(path)
 
                 if event.key == pygame.K_r:
-                    clear_bfs(grid_cells, explored, path)
+                    animation_running = False
+                    animation_paused = False
+                    explore_animation.clear()
+                    path_animation.clear()
+
+                    reset_stats(stats)
+
+                    clear_search_visuals(grid_cells)
                     explored = []
                     path = []
 
@@ -233,12 +302,26 @@ def main():
                         for _ in range (ROW_NUMBER)
                         ]
                     
+                    animation_running = False
+                    animation_paused = False
+                    explore_animation.clear()
+                    path_animation.clear()
+
+                    reset_stats(stats)
                     start_cell = None
                     destination_cell = None
                     explored = []
                     path = []
 
         screen.fill(BG_COLOR)
+        draw_text(screen, font, "Algorithm: Breadth First Search (BFS)", 650, 50)
+        draw_text(screen, font, f"Expanded Cells: {stats['expanded']}", 650, 130)
+        draw_text(screen, font, f"Path Length: {stats['path_length']}", 650, 210)
+        draw_text(screen, font, f"Runtime: {stats['runtime_ms']:.3f} ms", 650, 290)
+
+        found_text = "Yes" if stats ["found"] else "No"
+        draw_text(screen, font, f"Path Found: {found_text}", 650, 360)
+
 
         draw_cells(screen, grid_cells)
 
