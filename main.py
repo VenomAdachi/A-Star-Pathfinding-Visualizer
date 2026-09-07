@@ -1,5 +1,6 @@
 import pygame
 import time
+import heapq
 from collections import deque
 pygame.init()
 
@@ -82,7 +83,20 @@ def draw_hover(surface, row, column):
     y = row * BLOCK_SIZE
     pygame.draw.rect(surface, HOVER_COLOR, (x, y, BLOCK_SIZE, BLOCK_SIZE), 2)
 
-#BFS Algorithim Based Functions
+def reconstruct_path(came_from, destination):
+    if destination not in came_from:
+        return []
+
+    path = []
+    current = destination
+    
+    while current is not None:
+        path.append(current)
+        current = came_from[current]
+
+    path.reverse()
+
+    return path
 
 def get_neighbors(row, column, grid):
     neighbors = []
@@ -136,17 +150,63 @@ def bfs(grid, start, destination):
 
     if destination not in came_from:
             return explored_order, []
+
+    path = reconstruct_path(came_from, destination)
     
-    path = []
-    current = destination
-
-    while current is not None:
-        path.append(current)
-        current = came_from[current]
-
-    path.reverse()
-
     return explored_order, path
+
+def manhattan_distance(cell, destination):
+    row1, column1, = cell
+    row2, column2, = destination
+
+    return abs(row1 - row2) + abs(column1 - column2)
+
+def a_star(grid, start, destination):
+    open_queue = []
+    came_from = {start: None}
+
+    g_score = {start: 0}
+
+    h_score = {
+        start: manhattan_distance(start, destination)
+    }
+
+    f_score = {
+        start: g_score[start] + h_score[start]
+    }
+
+    explored_order = []
+    closed = set()
+    heapq.heappush(open_queue, (f_score[start], start))
+
+    while open_queue:
+        current_f, current = heapq.heappop(open_queue)
+
+        if current in closed:
+            continue
+
+        closed.add(current)
+        explored_order.append(current)
+
+        if current == destination:
+            break
+
+        current_row, current_column = current
+        neighbors = get_neighbors(current_row, current_column, grid)
+
+        for neighbor in neighbors:
+            tentative_g = g_score[current] + 1
+
+            if tentative_g < g_score.get(neighbor, float("inf")):
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g
+                h_score[neighbor] = manhattan_distance(neighbor, destination)
+                f_score[neighbor] = (g_score[neighbor] + h_score[neighbor])
+                heapq.heappush(open_queue, (f_score[neighbor], neighbor))
+
+    path = reconstruct_path(came_from, destination)
+
+    return explored_order, path, g_score, h_score, f_score
 
 def advance_animation(grid, explore_queue, path_queue):
     if explore_queue: 
@@ -210,6 +270,10 @@ def main():
         "found": False
     }
 
+    g_scores = {}
+    h_scores = {}
+    f_scores = {}
+
     font = pygame.font.Font(None, 28)
 
     grid_cells = [[EMPTY for _ in range(COLUMN_NUMBER)] for _ in range(ROW_NUMBER)]
@@ -267,7 +331,9 @@ def main():
 
                         start_time = time.perf_counter()
 
-                        explored, path = bfs(grid_cells, start_cell, destination_cell)
+                        # explored, path = bfs(grid_cells, start_cell, destination_cell)
+                        explored, path, g_scores, h_scores, f_scores = a_star(grid_cells, start_cell, destination_cell)
+
 
                         runtime_ms = (time.perf_counter() - start_time) * 1000
 
@@ -326,10 +392,19 @@ def main():
         draw_cells(screen, grid_cells)
 
         hovered_cell = get_mouse_cell(pygame.mouse.get_pos())
+        
 
         if hovered_cell is not None:
             row, column = hovered_cell
             draw_hover(screen, row, column)
+
+        if hovered_cell in f_scores:
+            cell_g = g_scores[hovered_cell]
+            cell_h = h_scores[hovered_cell]
+            cell_f = f_scores[hovered_cell]
+            draw_text(screen, font, f"g: {cell_g}", 900, 130)
+            draw_text(screen, font, f"h: {cell_h}", 900, 210)
+            draw_text(screen, font, f"f: {cell_f}", 900, 290)
 
         draw_grid(screen)
 
